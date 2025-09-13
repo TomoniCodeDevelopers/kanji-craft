@@ -1,5 +1,6 @@
 {
     "name": "題名未設定",
+    "version": "1.0.0",
     "description": "",
     "dependencies": {
         "core": "*",
