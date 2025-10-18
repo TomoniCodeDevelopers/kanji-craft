@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>GLB → Preview & STL (Three.js)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --side: 360px; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
+      display: grid; grid-template-columns: var(--side) 1fr; height: 100%;
+      background: #f7f7f7;
+    }
+    aside { padding: 16px; border-right: 1px solid #ddd; overflow: auto; }
+    main { position: relative; background: #fff; }
+    #viewport { position:absolute; inset:0; display:block; }
+    fieldset { border: 1px solid #ccc; margin: 8px 0; padding: 10px; }
+    legend { font-weight: 600; }
+    label { display:block; margin: 6px 0 2px; }
+    input[type="number"], input[type="text"], input[type="color"], select { width: 100%; box-sizing: border-box; }
+    button { width: 100%; padding: 10px; margin-top: 8px; }
+    small { color:#666; }
+    .row { display:flex; gap:8px; }
+    .row > * { flex: 1; min-width: 0; }
+    .hint { font-size:12px; color:#555; }
+    .sep { height:8px; }
+    details { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; background: #fcfcfc; margin: 8px 0; }
+    details > summary { cursor: pointer; font-weight: 600; outline: none; }
+    details[open] { background: #fafafa; }
+  </style>
+
+  <!-- Three.js を import map で解決 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <aside>
+    <h2>GLB → STL（ブラウザ完結）</h2>
+
+    <fieldset>
+      <legend>.glb 読み込み</legend>
+      <input id="glbFile" type="file" accept=".glb" />
+      <button id="loadGlb">読み込んでプレビュー</button>
+      <small>※ GLB はメッシュと材質をそのままプレビューします（STLは無色）。</small>
+    </fieldset>
+
+    <details>
+      <summary>プレビュー（表示・輪郭）</summary>
+      <div class="row">
+        <div>
+          <label>背景色</label>
+          <input id="bgColor" type="color" value="#e5e5e5" />
+        </div>
+        <div>
+          <label>表示モード</label>
+          <select id="shadeMode">
+            <option value="glb" selected>GLBの材質（推奨）</option>
+            <option value="gray">単色グレー（PBR）</option>
+            <option value="normal">法線カラー（診断）</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>メッシュ色（単色グレー用）</label>
+          <input id="meshColor" type="color" value="#bfbfbf" />
+        </div>
+        <div>
+          <label>エッジ線</label>
+          <select id="edgeEnabled">
+            <option value="1" selected>表示</option>
+            <option value="0">非表示</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>エッジ色</label>
+          <input id="edgeColor" type="color" value="#444444" />
+        </div>
+        <div>
+          <label>エッジ閾値（度）</label>
+          <input id="edgeDeg" type="number" value="20" step="1" min="1" max="90" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>グリッド表示</label>
+          <select id="gridVisible">
+            <option value="1" selected>表示</option>
+            <option value="0">非表示</option>
+          </select>
+        </div>
+        <div>
+          <label>金属/粗さ（単色グレー見た目）</label>
+          <input id="matParams" type="text" value="metal=0.0,rough=0.8" />
+        </div>
+      </div>
+      <small class="hint">※ GLB材質＋エッジ表示が最も形状を把握しやすい構成です。</small>
+    </details>
+
+    <details>
+      <summary>出力スケール（単位変換）</summary>
+      <div class="row">
+        <div>
+          <label>GLB 1単位あたりの mm</label>
+          <input id="mmPerUnit" type="number" value="1000" step="1" min="0.01"/>
+        </div>
+        <div>
+          <label>全体スケール係数</label>
+          <input id="uniformScale" type="number" value="1" step="0.01" min="0.01"/>
+        </div>
+      </div>
+      <small class="hint">glTF は 1 単位 ≒ 1 m の運用が一般的。STL は mm 想定が多く、既定は 1000 mm/単位です。</small>
+    </details>
+
+    <details>
+      <summary>STL 出力の向き（座標軸）</summary>
+      <label>上方向（Up Axis）</label>
+      <select id="upAxis">
+        <option value="Z" selected>Z（3Dプリンタ向け）</option>
+        <option value="Y">Y（Three.js デフォルト）</option>
+      </select>
+      <div class="row">
+        <div><label><input id="flipX" type="checkbox" /> X 反転（上下反転）</label></div>
+        <div><label><input id="flipY" type="checkbox" /> Y 反転（前後反転）</label></div>
+        <div><label><input id="flipZ" type="checkbox" /> Z 反転（左右反転）</label></div>
+      </div>
+      <small class="hint">既定（Z / 反転なし）で Bambu Lab 等に適合。必要時のみ変更してください。</small>
+    </details>
+
+    <div class="row">
+      <button id="frameFit">フレーミング調整</button>
+      <button id="export">STLを書き出し</button>
+    </div>
+    <div class="sep"></div>
+    <small id="stats"></small>
+  </aside>
+
+  <main>
+    <canvas id="viewport"></canvas>
+  </main>
+
+  <script type="module">
+    /***** ライブラリ読み込み *****/
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+    import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+
+    /***** UI *****/
+    const glbFileEl = document.getElementById('glbFile');
+    const loadGlbBtn = document.getElementById('loadGlb');
+    const mmPerUnitEl = document.getElementById('mmPerUnit');
+    const uniformScaleEl = document.getElementById('uniformScale');
+    const upAxisEl = document.getElementById('upAxis');
+    const flipXEl = document.getElementById('flipX');
+    const flipYEl = document.getElementById('flipY');
+    const flipZEl = document.getElementById('flipZ');
+    const exportBtn = document.getElementById('export');
+    const frameFitBtn = document.getElementById('frameFit');
+    const statsEl = document.getElementById('stats');
+    const bgColorEl = document.getElementById('bgColor');
+    const gridVisibleEl = document.getElementById('gridVisible');
+    const meshColorEl = document.getElementById('meshColor');
+    const matParamsEl = document.getElementById('matParams');
+    const shadeModeEl = document.getElementById('shadeMode');
+    const edgeEnabledEl = document.getElementById('edgeEnabled');
+    const edgeColorEl = document.getElementById('edgeColor');
+    const edgeDegEl = document.getElementById('edgeDeg');
+
+    /***** Three.js 基本セットアップ *****/
+    const canvas = document.getElementById('viewport');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#e5e5e5');
+
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 20000);
+    camera.position.set(3, 2.5, 3);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // ライト（キー＋リム）
+    const dir1 = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir1.position.set(4, 6, 4);
+    dir1.castShadow = true;
+    dir1.shadow.mapSize.set(2048, 2048);
+    dir1.shadow.camera.near = 0.1;
+    dir1.shadow.camera.far = 50;
+    dir1.shadow.camera.left = -15;
+    dir1.shadow.camera.right = 15;
+    dir1.shadow.camera.top = 15;
+    dir1.shadow.camera.bottom = -15;
+    scene.add(dir1);
+
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
+    dir2.position.set(-6, 3, -4);
+    scene.add(dir2);
+
+    scene.add(new THREE.AmbientLight(0xf0f0f0, 0.25));
+
+    // グリッド＆影受け床
+    const grid = new THREE.GridHelper(10, 10, 0x666666, 0xaaaaaa);
+    grid.position.y = 0;
+    scene.add(grid);
+
+    const shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(100, 100),
+      new THREE.ShadowMaterial({ opacity: 0.22 })
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.y = 0;
+    shadowPlane.receiveShadow = true;
+    scene.add(shadowPlane);
+
+    // GLB を入れるグループ
+    let meshGroup = new THREE.Group();
+    scene.add(meshGroup);
+
+    function resize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      renderer.setPixelRatio(ratio);
+      renderer.setSize(rect.width, rect.height, false);
+      camera.aspect = rect.width / rect.height;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    [bgColorEl, gridVisibleEl, meshColorEl, matParamsEl, shadeModeEl, edgeEnabledEl, edgeColorEl, edgeDegEl]
+      .forEach(el => el.addEventListener('change', applyAppearance));
+    resize();
+
+    (function animate(){
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+
+    /***** カメラフレーミング *****/
+    function frameToObject(object, padding = 1.25) {
+      const box = new THREE.Box3().setFromObject(object);
+      if (!isFinite(box.min.x) || !isFinite(box.max.x)) return;
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+
+      const maxSize = Math.max(size.x, size.y, size.z) * padding;
+      const fov = THREE.MathUtils.degToRad(camera.fov);
+      const dist = maxSize / Math.tan(fov / 2);
+
+      controls.target.copy(center);
+      camera.position.copy(center).add(new THREE.Vector3(dist, dist * 0.75, dist));
+      camera.near = Math.max(0.01, dist / 1000);
+      camera.far = Math.max(2000, dist * 10);
+      camera.updateProjectionMatrix();
+
+      // 床をモデル底面に合わせる
+      shadowPlane.position.y = box.min.y;
+      grid.position.y = box.min.y + 0.001;
+    }
+
+    /***** 情報表示 *****/
+    function updateStats(object) {
+      const box = new THREE.Box3().setFromObject(object);
+      const size = new THREE.Vector3(); box.getSize(size);
+      statsEl.textContent =
+        `推定サイズ (scene units): ${size.x.toFixed(3)} × ${size.y.toFixed(3)} × ${size.z.toFixed(3)} / ` +
+        `mm出力スケール: ${(Number(mmPerUnitEl.value) * Number(uniformScaleEl.value)).toFixed(2)} mm/unit`;
+    }
+
+    /***** 見た目の適用（材質とエッジ） *****/
+    function applyAppearance() {
+      scene.background = new THREE.Color(bgColorEl.value || '#e5e5e5');
+      grid.visible = gridVisibleEl.value === '1';
+      shadowPlane.visible = grid.visible;
+
+      const mode = (shadeModeEl.value || 'glb');
+      const meshColor = new THREE.Color(meshColorEl.value || '#bfbfbf');
+
+      let metal = 0.0, rough = 0.8;
+      const m = (matParamsEl.value || '').split(',').reduce((acc, kv) => {
+        const [k,v] = kv.split('=').map(s => String(s || '').trim());
+        if (!k || v==null) return acc;
+        acc[k] = Number(v);
+        return acc;
+      }, {});
+      if (Number.isFinite(m.metal)) metal = m.metal;
+      if (Number.isFinite(m.rough)) rough = m.rough;
+
+      const wantEdges = edgeEnabledEl.value === '1';
+      const edgeColor = new THREE.Color(edgeColorEl.value || '#444444');
+      const edgeDeg = Math.max(1, Math.min(90, Number(edgeDegEl.value || 20)));
+
+      // traverse
+      meshGroup.traverse(obj => {
+        if (!obj.isMesh) return;
+
+        // 元材質の保持/復帰
+        if (!obj.userData.__origMat) {
+          obj.userData.__origMat = obj.material;
+        }
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+
+        if (mode === 'glb') {
+          obj.material = obj.userData.__origMat;
+        } else if (mode === 'gray') {
+          obj.material = new THREE.MeshStandardMaterial({
+            color: meshColor,
+            metalness: metal,
+            roughness: rough,
+            side: THREE.FrontSide
+          });
+        } else if (mode === 'normal') {
+          obj.material = new THREE.MeshNormalMaterial({ side: THREE.FrontSide });
+        }
+
+        // 既存のエッジ線を除去
+        if (obj.userData.__edgeLine) {
+          obj.remove(obj.userData.__edgeLine);
+          obj.userData.__edgeLine.geometry.dispose();
+          obj.userData.__edgeLine.material.dispose();
+          obj.userData.__edgeLine = null;
+        }
+
+        // エッジ線（輪郭・稜線の強調）
+        if (wantEdges && obj.geometry) {
+          const eg = new THREE.EdgesGeometry(obj.geometry, edgeDeg);
+          const lm = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.6 });
+          const line = new THREE.LineSegments(eg, lm);
+          line.userData.isEdgeLine = true;
+          obj.add(line);
+          obj.userData.__edgeLine = line;
+        }
+      });
+    }
+
+    /***** GLB 読み込み *****/
+    const loader = new GLTFLoader();
+    loadGlbBtn?.addEventListener('click', async () => {
+      const f = glbFileEl?.files?.[0];
+      if (!f) { alert('.glb ファイルを選択してください。'); return; }
+
+      const url = URL.createObjectURL(f);
+      loader.load(url, (gltf) => {
+        URL.revokeObjectURL(url);
+
+        meshGroup.clear();
+        meshGroup.add(gltf.scene);
+
+        applyAppearance();     // 既定：GLB材質＋エッジ
+        frameToObject(meshGroup, 1.3);
+        updateStats(meshGroup);
+      }, undefined, (err) => {
+        URL.revokeObjectURL(url);
+        console.error(err);
+        alert('GLB の読み込みに失敗しました。コンソールをご確認ください。');
+      });
+    });
+
+    frameFitBtn.addEventListener('click', () => {
+      if (meshGroup.children.length === 0) return;
+      frameToObject(meshGroup, 1.3);
+      updateStats(meshGroup);
+    });
+
+    /***** STL 出力 *****/
+    function exportSTL() {
+      if (meshGroup.children.length === 0) {
+        alert('先に GLB を読み込んでください。');
+        return;
+      }
+
+      // すべてのメッシュ（InstancedMesh を含む）を実体化して収集
+      const geoms = [];
+      meshGroup.updateMatrixWorld(true);
+
+      const tmpObjMatrix = new THREE.Matrix4();
+      const tmpInstMatrix = new THREE.Matrix4();
+
+      meshGroup.traverse(obj => {
+        if (obj.isMesh && !obj.isInstancedMesh && obj.geometry) {
+          const g = obj.geometry.clone();
+          g.applyMatrix4(obj.matrixWorld);
+          geoms.push(g);
+        } else if (obj.isInstancedMesh && obj.geometry) {
+          const count = obj.count;
+          for (let i = 0; i < count; i++) {
+            obj.getMatrixAt(i, tmpInstMatrix);
+            const g = obj.geometry.clone();
+            tmpObjMatrix.copy(obj.matrixWorld).multiply(tmpInstMatrix);
+            g.applyMatrix4(tmpObjMatrix);
+            geoms.push(g);
+          }
+        }
+      });
+
+      if (geoms.length === 0) {
+        alert('エクスポート対象のメッシュが見つかりません。');
+        return;
+      }
+
+      // 結合
+      let merged = mergeGeometries(geoms, false);
+
+      // ====== 方向補正（軸変換） ======
+      // Three.js(Y-up) → Z-up は X +90°
+      const upAxis = (upAxisEl.value || 'Z').toUpperCase();
+      const mOrient = new THREE.Matrix4();
+      if (upAxis === 'Z') mOrient.multiply(new THREE.Matrix4().makeRotationX(+Math.PI / 2));
+      if (flipXEl.checked) mOrient.multiply(new THREE.Matrix4().makeRotationX(Math.PI));
+      if (flipYEl.checked) mOrient.multiply(new THREE.Matrix4().makeRotationY(Math.PI));
+      if (flipZEl.checked) mOrient.multiply(new THREE.Matrix4().makeRotationZ(Math.PI));
+      merged.applyMatrix4(mOrient);
+
+      // ====== 単位変換（scene units → mm） ======
+      const mmPerUnit = Number(mmPerUnitEl.value || 1);
+      const uniScale = Number(uniformScaleEl.value || 1);
+      const scaleToMM = mmPerUnit * uniScale;
+      if (scaleToMM !== 1) {
+        merged.applyMatrix4(new THREE.Matrix4().makeScale(scaleToMM, scaleToMM, scaleToMM));
+      }
+
+      // ====== 欠け／くぼみ対策：頂点溶接 ======
+      merged = mergeVertices(merged, 1e-6);
+
+      // STL バイナリとして出力
+      const exporter = new STLExporter();
+      const stl = exporter.parse(new THREE.Mesh(merged), { binary: true });
+
+      const blob = new Blob([stl], { type: 'model/stl' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'export_from_glb.stl';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    exportBtn.addEventListener('click', () => {
+      try { exportSTL(); } catch (e) { console.error(e); alert('STL 書き出しに失敗しました。'); }
+    });
+
+    // 初期適用
+    applyAppearance();
+  </script>
+</body>
+</html>

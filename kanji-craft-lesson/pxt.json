@@ -1,0 +1,16 @@
+{
+  "name": "kanji-craft-lesson",
+  "version": "0.0.0",
+  "dependencies": {
+    "minecraft": "*",
+    "kanji-craft": "github:abfly3939/kanji-craft#v2.0.0"
+  },
+  "files": ["docs/tutorial.md"],
+  "public": true
+}
+
+
+
+
+
+
