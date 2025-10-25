@@ -7,7 +7,6 @@
         "builder": "*"
     },
     "files": [
-        "README.md",
         "main.blocks",
         "main.ts",
         "custom.ts"
